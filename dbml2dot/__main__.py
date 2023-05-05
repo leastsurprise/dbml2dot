@@ -2,8 +2,8 @@ import pydbml.classes
 import pathlib
 import argparse
 
-from dbml2dot.generators import generate_graph_from_dbml
-from dbml2dot.utils import debug, set_debug
+from generators import generate_graph_from_dbml
+from utils import debug, set_debug
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="dbml2dot")
