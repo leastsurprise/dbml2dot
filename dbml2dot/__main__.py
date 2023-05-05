@@ -1,6 +1,7 @@
 import pydbml.classes
 import pathlib
 import argparse
+import requests
 
 from generators import generate_graph_from_dbml
 from utils import debug, set_debug
@@ -42,7 +43,6 @@ if __name__ == '__main__':
 
     if args.type != "none":
         from subprocess import check_call
-
         check_call(['dot', f'-T{args.type}', output_path.absolute(), '-o', output_path.with_suffix('.svg').absolute()])
 
     debug(f"Input: {input_path}, Output: {output_path}")
