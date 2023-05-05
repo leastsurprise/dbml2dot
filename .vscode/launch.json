@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Generate Dot File",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/dbml2dot/__main__.py",
+            "args": ["-i", "${workspaceFolder}/ownershipFact.dbml", "-o", "${workspaceFolder}/ownershipFact.dot", "--type", "svg"],
+            "console": "integratedTerminal"
+        }
+    ]
+}
