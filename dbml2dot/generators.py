@@ -3,7 +3,8 @@ from textwrap import dedent
 import pydbml.classes
 import pydot
 
-from dbml2dot.utils import debug
+from utils import debug
+
 
 
 def generate_table_label(name: str, attributes: list[str]):
@@ -25,11 +26,11 @@ def generate_column_node(name: str, column_attributes: pydbml.classes.Column, en
         col_string = f"<B>{col_string}</B>"
     if column_attributes.unique:
         col_string = f"<I>{col_string}</I>"
-    attribute_str = f"{col_string} : {column_attributes.type}"
+    attribute_str = f"{col_string} : {column_attributes}"
 
     enums_used = []
-    if str(column_attributes.type).strip() in enums:
-        enums_used += [str(column_attributes.type)]
+    if str(column_attributes).strip() in enums:
+        enums_used += [str(column_attributes)]
 
     return attribute_str, enums_used
 
@@ -40,7 +41,9 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
 
     attributes = []
     enums_used = []
-    for column_name, column_attributes in contents.column_dict.items():
+    for item in contents.columns:
+        column_name = item.name
+        column_attributes: pydbml.classes.Column = item 
         attribute_str, enums_used_by_column = generate_column_node(column_name, column_attributes, enums)
         attributes += [attribute_str]
         enums_used += enums_used_by_column
@@ -62,7 +65,6 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
 
     return node, edges
 
-
 def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
     graph = pydot.Graph()
     graph.set_node_defaults(fontname="Bitstream Vera Sans", fontsize=8, shape="none")
@@ -83,6 +85,7 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
     debug("Tables:", list(dbml.table_dict.keys()))
 
     for table_name, table_contents in dbml.table_dict.items():
+        table_name = table_contents.name # not full_name
         node, edges = generate_table_nodes(table_name, table_contents, enums)
 
         graph.add_node(node)
@@ -92,8 +95,10 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
     for reference in dbml.refs:
         reference: pydbml.classes.Reference = reference
 
-        orig = reference.col1.name
-        dest = reference.col2.name
+        orig: pydbml.classes.Column = reference.col1
+        dest: pydbml.classes.Column = reference.col2
+        orig = orig[0].name
+        dest = dest[0].name
 
         label_len = (len(dest) + len(orig))
 
@@ -103,14 +108,27 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
                 graph.add_edge(pydot.Edge(reference.table1.name, reference.table2.name, style="invis"))
                 # graph.
 
-        graph.add_edge(pydot.Edge(
-            reference.table1.name, reference.table2.name,
-            headlabel=dest,
-            taillabel=orig,
-            xlabel=" " * label_len*2,
-            minlen=int(math.sqrt(1+label_len/2))
-            # xlabel=f"{reference.col1.name} {reference.type} {reference.col2.name}"
-        ))
+        if reference.type == '-':
+            graph.add_edge(pydot.Edge(
+                reference.table1.name, reference.table2.name,
+                minlen=2, arrowhead="none", arrowtail="none",
+                xlabel=f"{orig} : {dest}"
+            ))
+        elif reference.type == '<':
+            graph.add_edge(pydot.Edge(
+                reference.table1.name, reference.table2.name,
+                arrowtail="none", xlabel=f"{orig} : {dest}"
+            ))
+        elif reference.type == '>':
+            graph.add_edge(pydot.Edge(
+                reference.table1.name, reference.table2.name,
+                arrowhead="none", xlabel=f"{orig} : {dest}"
+            ))
+        elif reference.type == '<>':
+            graph.add_edge(pydot.Edge(
+                reference.table1.name, reference.table2.name,
+                xlabel=f"{orig} : {dest}"
+            ))
 
     # graph.set_simplify(True)
     graph.set_type("digraph")
