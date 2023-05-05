@@ -2,19 +2,37 @@ import math
 from textwrap import dedent
 import pydbml.classes
 import pydot
+import re
+
+import networkx as nx
+from itertools import cycle
+from palettable.colorbrewer.qualitative import Dark2_8
+from palettable.wesanderson import GrandBudapest3_6
+
 
 from utils import debug
 
+def extract_color(note):
+    match = re.search(r'^.*?COLOU?R:\s*(\d+)\b.*$', note, re.IGNORECASE)
+    if match:
+        color_index = int(match.group(1))
+        color = GrandBudapest3_6.colors[color_index % len(GrandBudapest3_6.colors)]
+        color = '#' + str(color[0]) + str(color[1]) + str(color[2])
+        return color
+    return None
 
-
-def generate_table_label(name: str, attributes: list[str]):
+def generate_table_label(name: str, attributes: list[str], header_color: tuple):
     attribute_list: list[str] = []
+    if header_color is not None:
+        header_color = ' bgcolor="' + header_color + '" '
+    else:
+        header_color = ''
     for attr in attributes:
         attribute_list += [f"""<TR><TD align="left">{attr}</TD></TR>"""]
     attribute_list_str = "\n".join(attribute_list)
     return dedent(f'''
         <<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="1">
-        <TR><TD><B>{name}</B></TD></TR><HR></HR>
+        <TR><TD{header_color}><B>{name}</B></TD></TR><HR></HR>
         {attribute_list_str}
         </TABLE>>''').strip().replace('\n', '\n\t')
 
@@ -39,6 +57,7 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
     pydot.Node, list[pydot.Edge]]:
     debug(f"{name}: {contents}")
 
+    header_color = extract_color(contents.note.text) 
     attributes = []
     enums_used = []
     for item in contents.columns:
@@ -50,7 +69,7 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
 
     node: pydot.Node = pydot.Node(
         name,
-        label=generate_table_label(name, attributes)
+        label=generate_table_label(name, attributes, header_color)
     )
 
     edges: list[pydot.Edge] = []
@@ -64,6 +83,8 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
         ]
 
     return node, edges
+
+
 
 def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
     graph = pydot.Graph()
@@ -92,7 +113,9 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
         for edge in edges:
             graph.add_edge(edge)
 
+    colors = cycle(Dark2_8.hex_colors)
     for reference in dbml.refs:
+        next_color = next(colors)
         reference: pydbml.classes.Reference = reference
 
         orig: pydbml.classes.Column = reference.col1
@@ -100,7 +123,8 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
         orig = orig[0].name
         dest = dest[0].name
 
-        label_len = (len(dest) + len(orig))
+        label_len = (len(dest) + len(orig)) 
+        ml = int(math.sqrt(1+label_len/2))
 
         if reference.table1.name == reference.table2.name:
             debug("Origin and destination are identical", reference.table1.name)
@@ -108,26 +132,29 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
                 graph.add_edge(pydot.Edge(reference.table1.name, reference.table2.name, style="invis"))
                 # graph.
 
+
         if reference.type == '-':
             graph.add_edge(pydot.Edge(
                 reference.table1.name, reference.table2.name,
-                minlen=2, arrowhead="none", arrowtail="none",
-                xlabel=f"{orig} : {dest}"
+                minlen=ml, arrowhead="none", arrowtail="none",
+                xlabel=f"{orig} : {dest}", color=next_color
             ))
         elif reference.type == '<':
             graph.add_edge(pydot.Edge(
                 reference.table1.name, reference.table2.name,
-                arrowtail="none", xlabel=f"{orig} : {dest}"
+                arrowtail="none", xlabel=f"{orig} : {dest}",
+                color=next_color, minlen=ml
             ))
         elif reference.type == '>':
             graph.add_edge(pydot.Edge(
                 reference.table1.name, reference.table2.name,
-                arrowhead="none", xlabel=f"{orig} : {dest}"
+                arrowhead="none", xlabel=f"{orig} : {dest}",
+                color=next_color, minlen=ml
             ))
         elif reference.type == '<>':
             graph.add_edge(pydot.Edge(
                 reference.table1.name, reference.table2.name,
-                xlabel=f"{orig} : {dest}"
+                xlabel=f"{orig} : {dest}", color=next_color, minlen=ml
             ))
 
     # graph.set_simplify(True)
