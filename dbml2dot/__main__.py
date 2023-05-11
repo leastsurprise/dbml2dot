@@ -2,6 +2,9 @@ import pydbml.classes
 import pathlib
 import argparse
 import requests
+import re
+
+encoded_tooltips = []
 
 from generators import generate_graph_from_dbml
 from utils import debug, set_debug
@@ -43,6 +46,20 @@ if __name__ == '__main__':
 
     if args.type != "none":
         from subprocess import check_call
+        if 'svg' not in args.type and len(encoded_tooltips) > 0:
+            with open(str(output_path.absolute()), 'r') as f:
+                modified_contents = f.read()
+                for tooltip in encoded_tooltips:
+                    modified_contents = re.sub(tooltip['key'],tooltip['text'],modified_contents)
+            with open(str(output_path.absolute()), 'w') as f:
+                f.write(modified_contents)
         check_call(['dot', f'-T{args.type}', output_path.absolute(), '-o', output_path.with_suffix('.svg').absolute()])
+        if 'svg' in args.type and len(encoded_tooltips) > 0:
+            with open(str(output_path.with_suffix('.svg').absolute()), 'r') as f:
+                modified_contents = f.read()
+                for tooltip in encoded_tooltips:
+                    modified_contents = re.sub(tooltip['key'],f"<title>{tooltip['tooltip']}</title>{tooltip['text']}",modified_contents)
+            with open(str(output_path.with_suffix('.svg').absolute()), 'w') as f:
+                f.write(modified_contents)
 
     debug(f"Input: {input_path}, Output: {output_path}")

@@ -4,27 +4,20 @@ import pydbml.classes
 import pydot
 import re
 import networkx as nx
+import uuid
 from itertools import cycle
 from palettable.colorbrewer.qualitative import Set3_8 # for header groups
-#from palettable.colorbrewer.qualitative import Set1_7
 from utils import debug
 
-#color_cycle = cycle(Set1_7.hex_colors)
+from __main__ import encoded_tooltips
 
 def extract_color_from_note(note):
     match = re.search(r'^.*?COLOU?R:\s*(\d+)\b.*$', note, re.IGNORECASE)
     if match:
-        index = int(match.group(1)) * 2
-        color = Set3_8.colors[index % len(Set3_8.colors)]
-        color = '#' + str(color[0]) + str(color[1]) + str(color[2])
+        index = int(match.group(1)) 
+        color = Set3_8.hex_colors[index % len(Set3_8.colors)]
         return color
     return None
-
-#def extract_next_colour_pair():
-#    col_color = next(color_cycle)
-#    #edge_color = next(color_cycle)
-#    edge_color = col_color
-#    return (edge_color,col_color)
 
 
 def generate_table_label(name: str, attributes: list[str], header_color: tuple):
@@ -34,14 +27,19 @@ def generate_table_label(name: str, attributes: list[str], header_color: tuple):
     else:
         header_color = ''
     for attr in attributes:
-        match = re.search(r'^(.*?)(PORT=)(.*?)(BGCOLOR=)("#.+")$', attr, re.IGNORECASE)
+        td_attributes = ''
+        match = re.search(r'^(.*?)(PORT=)(.*?)(BGCOLOR=)("#.+?")(.*)$', attr, re.IGNORECASE)
         if match:
-            attr = match.group(1)
-            port = match.group(3)
-            bgcolor = match.group(5)
-            attribute_list += [f"""<TR><TD align="left" port={port} bgcolor={bgcolor}>{attr}</TD></TR>"""]
-        else:
-            attribute_list += [f"""<TR><TD align="left">{attr}</TD></TR>"""]
+            attr = f"{match.group(1)}{match.group(6)}"
+            td_attributes += f" port={match.group(3)}"
+            td_attributes += f" bgcolor={match.group(5)}"
+        match = re.search(r'^(.*?)( tooltip=")(.+?)(")(.*)$', attr, re.IGNORECASE)
+        if match:
+            attr = f"{match.group(1)}{match.group(5)}"
+            k = str(uuid.uuid4()).replace('-','x')
+            encoded_tooltips.append({'key': k, 'text': attr, 'tooltip':match.group(3)})
+            attr = k
+        attribute_list += [f"""<TR><TD align="left"{td_attributes}>{attr}</TD></TR>"""]
     attribute_list_str = "\n".join(attribute_list)
     return dedent(f'''
         <<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
@@ -83,10 +81,9 @@ def get_reference(column: pydbml.classes.Column, references: list[pydbml.classes
         col1_name = ref.col1[0].name
         col2_name = ref.col2[0].name
         # the idea here is just to return a single reference of possibly many
-        # that is because
-        # 1: pair references with their two columns by colours - darker version for the link, lighter for background colour of column
-        #    There being possibly many references we just want "a" colour
-        # 2: there is a recursion issue in other versions of the code because a ref contains a col contains a ref contains a col......
+        # there is a recursion issue in other versions of the code because a ref contains a col contains a ref contains a col......
+        # We need this ref so we know to express the port for linking, or set the header colour in the
+        # html-esque .dot coding.
         if this_col in col1_name or this_col in col2_name:
             return ref
     return None
@@ -107,8 +104,11 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
     enums_used = []
     for item in contents.columns:
         column_name = item.name
+        note = item.note
         column_attributes: pydbml.classes.Column = item 
         attribute_str, enums_used_by_column = generate_column_node(column_name, column_attributes, enums, get_reference(column_attributes, references))
+        if note:
+            attribute_str += f' tooltip="{note.text}"'
         attributes += [attribute_str]
         enums_used += enums_used_by_column
 
@@ -127,10 +127,10 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
 
 def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
     graph = pydot.Graph()
-    graph.set_node_defaults(fontname="Bitstream Vera Sans", fontsize=8, shape="plain")
+    graph.set_node_defaults(fontname="Bitstream Vera Sans", fontsize=14, shape="plain")
     graph.set_edge_defaults(fontname="Bitstream Vera Sans", fontsize=8, labeldistance=2, color="grey")
-    graph.set_graph_defaults(rankdir='LR', nodesep="0.5", pad="0.5", ranksep="2")
-    graph.set_graph_defaults(splines='spline')
+    graph.set_graph_defaults(rankdir='LR', nodesep="0.5", pad="0.5", ranksep="2", overlap="false")
+    graph.set_graph_defaults(splines='true')
     enums = []
     for enum in dbml.enums:
         enum: pydbml.classes.Enum = enum
@@ -183,7 +183,6 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
                 reference.table1.name + ':' + reference.col1[0].port_nbr,
                 reference.table2.name + ':' + reference.col2[0].port_nbr,
                 minlen=ml, arrowhead="none", arrowtail="none",
-                #xlabel=f"{orig} : {dest}",
                 color=reference.edge_color
             ))
         elif reference.type == '<':
@@ -191,7 +190,6 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
                 reference.table1.name + ':' + reference.col1[0].port_nbr,
                 reference.table2.name + ':' + reference.col2[0].port_nbr,
                 arrowtail="none", arrowhead="crow", 
-                # xlabel=f"{orig} : {dest}",
                 color=reference.edge_color, # minlen=ml
             ))
         elif reference.type == '>':
@@ -199,15 +197,13 @@ def generate_graph_from_dbml(dbml: pydbml.PyDBML) -> pydot.Graph:
                 reference.table1.name + ':' + reference.col1[0].port_nbr,
                 reference.table2.name + ':' + reference.col2[0].port_nbr,
                 arrowhead="none", arrowtail="crow",
-                # xlabel=f"{orig} : {dest}",
                 color=reference.edge_color #, minlen=ml
             ))
         elif reference.type == '<>':
             graph.add_edge(pydot.Edge(
                 reference.table1.name + ':' + reference.col1[0].port_nbr,
                 reference.table2.name + ':' + reference.col2[0].port_nbr,
-                arrowhead="crow", arrowtail="crow",
-               # xlabel=f"{orig} : {dest}", 
+                arrowhead="crow", arrowtail="crow", dir='both',
                 color=reference.edge_color #, minlen=ml
             ))
 
