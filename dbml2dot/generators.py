@@ -11,16 +11,19 @@ from utils import debug
 
 from __main__ import encoded_tooltips
 
-def extract_color_from_note(note):
-    match = re.search(r'^.*?COLOU?R:\s*(\d+)\b.*$', note, re.IGNORECASE)
+
+def extract_color_and_tooltip_from_note(note):
+    match = re.search(r'^.*?COLOU?R:\s*(\d+)\b(.*?)$', note, re.IGNORECASE)
     if match:
-        index = int(match.group(1)) 
+        index = int(match.group(1))
         color = Set3_8.hex_colors[index % len(Set3_8.colors)]
-        return color
-    return None
+        tooltip = match.group(2).strip()
+        return color, tooltip
+    return None, None
 
 
-def generate_table_label(name: str, attributes: list[str], header_color: tuple):
+
+def generate_table_label(name: str, attributes: list[str], header_color: tuple, tooltip: str):
     attribute_list: list[str] = []
     if header_color is not None:
         header_color = ' bgcolor="' + header_color + '" '
@@ -37,13 +40,20 @@ def generate_table_label(name: str, attributes: list[str], header_color: tuple):
         if match:
             attr = f"{match.group(1)}{match.group(5)}"
             k = str(uuid.uuid4()).replace('-','x')
-            encoded_tooltips.append({'key': k, 'text': attr, 'tooltip':match.group(3)})
+            encoded_tooltips.append({'key': k, 'text': attr, 'tooltip':match.group(3).strip()})
             attr = k
         attribute_list += [f"""<TR><TD align="left"{td_attributes}>{attr}</TD></TR>"""]
     attribute_list_str = "\n".join(attribute_list)
+    attr = name
+    if tooltip:
+        k = str(uuid.uuid4()).replace('-','')
+        k = k * 10
+        k = k[:len(name)]
+        encoded_tooltips.append({'key': k, 'text': attr, 'tooltip':'<title>' + tooltip.strip() + '</title>'})
+        attr = k
     return dedent(f'''
         <<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
-        <TR><TD{header_color}><B>{name}</B></TD></TR><HR></HR>
+        <TR><TD{header_color}><B>{attr}</B></TD></TR><HR></HR>
         {attribute_list_str}
         </TABLE>>''').strip().replace('\n', '\n\t')
 
@@ -65,7 +75,7 @@ def generate_column_node(name: str, column_attributes: pydbml.classes.Column, en
     # is this column either end of the reference?
     if reference is not None and (name == reference.col1[0].name or name == reference.col2[0].name):
         if hasattr(reference, 'note'):
-            colors = extract_color_from_note(reference.note.text)
+            colors, tooltip = extract_color_and_tooltip_from_note(reference.note.text)
             if colors and 'BGCOLOR' not in attribute_str:
                 attribute_str = f"<TABLE BORDER='0' CELLBORDER='1' CELLSPACING='0' CELLPADDING='4'><TR><TD BGCOLOR='{colors.column_color}'>{attribute_str}</TD></TR></TABLE>"
         else:
@@ -92,7 +102,7 @@ def get_reference(column: pydbml.classes.Column, references: list[pydbml.classes
 def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[str], references: list[pydbml.classes.Reference]) -> tuple[    pydot.Node, list[pydot.Edge]]:
     debug(f"{name}: {contents}")
 
-    header_color = extract_color_from_note(contents.note.text) 
+    header_color, toolip = extract_color_and_tooltip_from_note(contents.note.text) 
     
     for reference in references:
         #reference.edge_color, reference.column_color = extract_next_colour_pair()
@@ -114,7 +124,7 @@ def generate_table_nodes(name: str, contents: pydbml.classes.Table, enums: list[
 
     node: pydot.Node = pydot.Node(
         name,
-        label=generate_table_label(name, attributes, header_color)
+        label=generate_table_label(name, attributes, header_color, toolip)
     )
 
     edges: list[pydot.Edge] = []
